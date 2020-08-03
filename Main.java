@@ -1,20 +1,22 @@
 package calculator;
-
-
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Scanner;
-
-
-// https://github.com/ArturNikitin/hyperskill-Smart-Calculator/blob/master/Smart%20Calculator/task/src/calculator/Main.java - for example
-// https://github.com/EightM/HyperskillSmartCalculator/blob/master/Main.java - for example
-
-
-// https://www.youtube.com/watch?v=juGC9Iaji20 - postfix 
-
+import java.math.BigInteger;
+import java.util.*;
 public class Main {
-    public static String calculateNumbers(String input, List<String> vars, List<Integer> values) {
-        String[] commands = input.replaceAll("\\s+", " ")
+    public static String calculateNumbers(String input, List<String> vars, List<String> values) {
+        char[] braces = input.toCharArray();
+        int cnt = 0;
+        for (char brace:
+             braces) {
+            if (brace == '(' || brace == ')') cnt++;
+        }
+        for (int i = 0; i < braces.length; i++) {
+            if (braces[i] == '*' && braces[i+1] == '*') return "Invalid expression";
+            else if (braces[i] == '/' && braces[i+1] == '/') return "Invalid expression";
+        }
+        if (cnt % 2 != 0) return "Invalid expression";
+
+
+        String[] commands = input.trim().replaceAll("\\s+", " ")
                 .replaceAll("\\+{2,}", "+").split(" ");
         boolean varOrNot = false;
         if(vars.size() > 0) {
@@ -30,29 +32,29 @@ public class Main {
                 if(commands[i].matches("[a-zA-Z]+")) {
                     for (int j = 0; j < vars.size(); j++) {
                         if(vars.get(j).equals(commands[i])) {
-                            commands[i] = String.valueOf(values.get(j));
+                            commands[i] = values.get(j);
                             break;
                         }
                     }
                 }
             }
         }
-        if(vars.size() == 1 && input.toLowerCase().equals(vars.get(0))) {
+        if(commands[0].matches("[a-zA-Z]+") ||
+                vars.size() == 1 && input.toLowerCase().equals(vars.get(0))) {
             return "Unknown variable";
         }
         for (int i = 0; i < commands.length; i++) {
-            if(commands[i].matches("[a-zA-z]+") ||
-            commands[i].matches("\\d+\\+") ||
-            i % 2 != 0 && commands[i].matches("\\d+") ||
+            if(commands[i].matches("[a-zA-Z]+") ||
+                    commands[i].matches("\\d+\\+") ||
+                    i % 2 != 0 && commands[i].matches("\\d+") ||
                     commands[i].matches("\\d+-")) {
                 return "Invalid expression";
             }
         }
-        int result = Integer.parseInt(commands[0]);
-        if(input.length() == 1 && varOrNot) {
-            System.out.println(values.get(vars.indexOf(input)));
-        } else if(input.length() == 1) {
-            System.out.println(input);
+        if(input.trim().length() == 1 && varOrNot) {
+            return String.valueOf(values.get(vars.indexOf(input.trim())));
+        } else if(input.trim().length() == 1) {
+            return input;
         } else  {
             for (int i = 0; i < commands.length; i++) {
                 if(commands[i].matches("-{2,}")) {
@@ -66,18 +68,20 @@ public class Main {
                     commands[i] = commands[i].substring(1);
                 }
             }
-            for (int i = 0; i < commands.length-2; i+=2) {
-                if(commands[i+1].equals("+")) {
-                    result += Integer.parseInt(commands[i+2]);
-                } else {
-                    result -= Integer.parseInt(commands[i+2]);
-                }
-            }
-            return String.valueOf(result);
         }
-        return "";
+        String temp = "";
+        for (int i = 0; i < commands.length; i++) {
+            if(commands[i].equals("+") && commands[i+1].contains("-")) {
+                continue;
+            } else {
+                temp += commands[i];
+            }
+        }
+        PostFixConverter postFixConverter = new PostFixConverter(temp);
+        PostFixCalculator postFixCalculator = new PostFixCalculator(postFixConverter.getPostfixAsList());
+        return String.valueOf(postFixCalculator.result());
     }
-    public static void addVariables(String input, List<String> vars, List<Integer> values) {
+    public static void addVariables(String input, List<String> vars, List<String> values) {
         String[] variables = input.replaceAll("\\s+", "").split("=");
         for (int i = 0; i < variables.length - 1; i+=2) {
             if(!(variables[i].matches("[a-zA-Z]+"))) {
@@ -103,10 +107,10 @@ public class Main {
                     }
                 } else {
                     if(vars.contains(variables[i])) {
-                        values.set(vars.indexOf(variables[i]), Integer.valueOf(variables[i+1]));
+                        values.set(vars.indexOf(variables[i]), variables[i+1]);
                     } else {
                         vars.add(variables[i]);
-                        values.add(Integer.valueOf(variables[i+1]));
+                        values.add(variables[i+1]);
                     }
                 }
             }
@@ -115,7 +119,7 @@ public class Main {
     public static void main(String[] args) {
         Scanner scanner = new Scanner(System.in);
         List<String> vars = new ArrayList<>();
-        List<Integer> values = new ArrayList<>();
+        List<String> values = new ArrayList<>();
         while (true){
             String input = scanner.nextLine();
             if(input.isEmpty()) continue;
@@ -123,7 +127,8 @@ public class Main {
                 System.out.println("Bye!");
                 break;
             } else if (input.equals("/help")) {
-                System.out.println("The program calculates the addition/subtraction of numbers");
+                System.out.println("The program calculates the " +
+                        "addition/subtraction/division/multiplication of numbers");
             } else if (input.matches("/.*")){
                 System.out.println("Unknown command");
             } else {
@@ -134,5 +139,159 @@ public class Main {
                 }
             }
         }
+    }
+}
+class PostFixConverter extends Main{
+    private final String infix; // The infix expression to be converted
+    private final Deque<Character> stack = new ArrayDeque<>();
+    private final List<String> postfix = new ArrayList<>(); // To hold the postfix expression
+
+    public PostFixConverter(String expression)
+    {
+        infix = expression;
+        convertExpression();
+    }
+
+    /* The approach is basically, if it's a number, push it to postfix list
+     * else if it's an operator, push it to stack
+     */
+    private void convertExpression()
+    {
+        // Temporary string to hold the number
+        StringBuilder temp = new StringBuilder();
+
+        for(int i = 0; i != infix.length(); ++i)
+        {
+            if(Character.isDigit(infix.charAt(i)))
+            {
+                /* If we encounter a digit, read all digit next to it and append to temp
+                 * until we encounter an operator.
+                 */
+                temp.append(infix.charAt(i));
+
+                while((i+1) != infix.length() && (Character.isDigit(infix.charAt(i+1))
+                        || infix.charAt(i+1) == '.'))
+                {
+                    temp.append(infix.charAt(++i));
+                }
+
+
+                /* If the loop ends it means the next token is an operator or end of expression
+                 * so we put temp into the postfix list and clear temp for next use
+                 */
+                postfix.add(temp.toString());
+                temp.delete(0, temp.length());
+            }
+            // Getting here means the token is an operator
+            else
+                inputToStack(infix.charAt(i));
+        }
+        clearStack();
+    }
+
+
+    private void inputToStack(char input)
+    {
+        if(stack.isEmpty() || input == '(')
+            stack.addLast(input);
+        else
+        {
+            if(input == ')')
+            {
+                while(!stack.getLast().equals('('))
+                {
+                    postfix.add(stack.removeLast().toString());
+                }
+                stack.removeLast();
+            }
+            else
+            {
+                if(stack.getLast().equals('('))
+                    stack.addLast(input);
+                else
+                {
+                    while(!stack.isEmpty() && !stack.getLast().equals('(') &&
+                            getPrecedence(input) <= getPrecedence(stack.getLast()))
+                    {
+                        postfix.add(stack.removeLast().toString());
+                    }
+                    stack.addLast(input);
+                }
+            }
+        }
+    }
+
+
+    private int getPrecedence(char op)
+    {
+        if (op == '+' || op == '-')
+            return 1;
+        else if (op == '*' || op == '/')
+            return 2;
+        else if (op == '^')
+            return 3;
+        else return 0;
+    }
+
+
+    private void clearStack()
+    {
+        while(!stack.isEmpty())
+        {
+            postfix.add(stack.removeLast().toString());
+        }
+    }
+
+
+    public List<String> getPostfixAsList()
+    {
+        return postfix;
+    }
+}
+class PostFixCalculator extends Main{
+    private final List<String> expression;
+    private final Deque<BigInteger> stack = new ArrayDeque<>();
+
+    public PostFixCalculator(List<String> postfix) {expression = postfix;}
+
+
+    public BigInteger result()
+    {
+        for(int i = 0; i != expression.size(); ++i)
+        {
+            // Determine if current element is digit or not
+            if(Character.isDigit(expression.get(i).charAt(0)))
+            {
+                stack.addLast(new BigInteger(expression.get(i)));
+            }
+            else
+            {
+                BigInteger tempResult;
+                BigInteger temp;
+
+                switch(expression.get(i))
+                {
+                    case "+": temp = stack.removeLast();
+                        tempResult = stack.removeLast().add(temp);
+                        break;
+
+                    case "-": temp = stack.removeLast();
+                        tempResult = stack.removeLast().subtract(temp);
+                        break;
+
+                    case "*": temp = stack.removeLast();
+                        tempResult = stack.removeLast().multiply(temp);
+                        break;
+
+                    case "/": temp = stack.removeLast();
+                        tempResult = stack.removeLast().divide(temp);
+                        break;
+                    default:
+                        throw new IllegalStateException("Unexpected value: " + expression.get(i));
+                }
+                stack.addLast(tempResult);
+            }
+        }
+        return stack.removeLast();
     }
 }
